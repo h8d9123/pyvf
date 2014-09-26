@@ -56,7 +56,7 @@ def vectFitSingle(ss, yy, p0, asymptote='none'):
     return sig.lti(yy_num, yy_den)
 
 def vectFit(ss, yy, p0, numIter=10, asymptote='none', makePlot=True):
-    """Performs vector fitting of complex data.
+    """Performs vector fitting of complex data and returns a scipy.signal.lti model.
     
     Parameters
     ----------
@@ -65,23 +65,29 @@ def vectFit(ss, yy, p0, numIter=10, asymptote='none', makePlot=True):
     p0 : array of guesses for poles
     numIter : number of times to iterate the vector fitting algorithm
     asymptote : 'none', 'constant', or 'linear'. If 'none', the underlying function is assumed to
-        be given entirely in terms of residues and poles. If 'constant', a complex constant *d* will
-        be added. If 'linear', a complex linear term *d + ss e* will be added.
-    makePlot: generate a Bode plot (with residuals) of the data and the fit.
+        be given entirely in terms of residues and poles. If 'constant', a complex constant d will
+        be added. If 'linear', a complex linear term d + ss*e will be added.
+    makePlot : generate a Bode plot (with residuals) of the data and the fit.
+
+    Returns
+    -------
+    yyLti : scipy.signal.lti representation of the vector-fitted data
+    figHandle : if makePlot is true, vectFit also returns a handle to the Bode plot figure.
+
     """
     thisGuess = p0
     for ii in range(numIter):
-        thisLti = vectFitSingle(ss, yy, thisGuess, asymptote='none')
+        yyLti = vectFitSingle(ss, yy, thisGuess, asymptote='none')
         # The following loop flips poles as necessary to keep them
         # in the left-hand plane
-        for poleInd, pole in enumerate(thisLti.poles):
+        for poleInd, pole in enumerate(yyLti.poles):
             if np.real(pole) > 0:
-                thisLti.poles[poleInd] = -np.conjugate(pole)
-        thisGuess = thisLti.poles
+                yyLti.poles[poleInd] = -np.conjugate(pole)
+        thisGuess = yyLti.poles
     if makePlot==True:
-        figHandle = bodePlot(ss, yy, thisLti)
-        return thisLti, figHandle
-    return thisLti
+        figHandle = bodePlot(ss, yy, yyLti)
+        return yyLti, figHandle
+    return yyLti
 
 def bodePlot(ss, yy, theLti):
     # Use gridspec to set up the aspect ratio of the Bode plot
