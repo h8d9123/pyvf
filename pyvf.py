@@ -10,9 +10,9 @@ def getResidues(ss, yy, p0, asymptote='none'):
     if asymptote=='none':
         cMat = np.concatenate([cMat1, cMat2], axis=1)
     if asymptote=='constant':
-        cMat = np.concatenate([cMat1, [np.ones(len(ss))], cMat2], axis=1)
+        cMat = np.concatenate([cMat1, np.transpose([np.ones(len(ss))]), cMat2], axis=1)
     if asymptote=='linear':
-        cMat = np.concatenate([cMat1, [np.ones(len(ss))], [ss], cMat2], axis=1)
+        cMat = np.concatenate([cMat1, np.transpose([np.ones(len(ss))]), np.transpose([ss]), cMat2], axis=1)
     yyReal = np.real(yy)
     yyImag = np.imag(yy)
     cMatReal = np.real(cMat)
@@ -22,26 +22,29 @@ def getResidues(ss, yy, p0, asymptote='none'):
                           axis=1)
     ryy = np.concatenate([yyReal, yyImag])
     weight = 1/np.abs(yy)**2
+    #weight = 1/(np.log10(np.abs(yy)+1))**2
     weight = np.tile(weight, 2)
     weight = np.diag(weight)
     rMatWeight = np.squeeze(np.array(np.matrix(rMat).T * np.matrix(weight) * np.matrix(rMat)))
     ryyWeight = np.squeeze(np.array(np.matrix(rMat).T * np.matrix(weight) * np.matrix(ryy).T))
     qFit = np.linalg.lstsq(rMatWeight, ryyWeight)
-    #qFit = np.linalg.lstsq(rMat, ryy)
     print(qFit)
     xFit = qFit[0]
     xFit = xFit.reshape(2, len(xFit)/2)
     xFit = xFit[0] + 1j*xFit[1]
     yy_res = xFit[:len(p0)]
+    sigma_res = xFit[-len(p0):]
+    asympArr = xFit[len(p0):-len(p0)]
+    """
     if asymptote=='none':
         asympArr = []
-        sigma_res = xFit[len(p0):]
     if asymptote=='constant':
-        asympArr = xFit[len(p0)]
-        sigma_res = xFit[len(p0)+1:]
+        asympArr = [xFit[len(p0)]]
+        sigma_res = xFit[-len(p0):]
     if asymptote=='linear':
-        asympArr = xFit[len(p0):len(p0+1)]
-        sigma_res = xFit[len(p0)+2:]
+        asympArr = xFit[len(p0):len(p0+2)]
+        sigma_res = xFit[-len(p0):]
+    """
     return yy_res, asympArr, sigma_res
 
 def vectFitSingle(ss, yy, p0, asymptote='none'):
@@ -52,10 +55,10 @@ def vectFitSingle(ss, yy, p0, asymptote='none'):
     yy_poles, _ = np.linalg.eig(Hmat)
     yy_res, asympArr, _ = getResidues(ss, yy, yy_poles, asymptote)
 
-    yy_num, yy_den = sig.invres(yy_res, yy_poles, asympArr)
+    yy_num, yy_den = sig.invres(yy_res, yy_poles, np.real(asympArr))
     return sig.lti(yy_num, yy_den)
 
-def vectFit(ss, yy, p0, numIter=10, asymptote='none', makePlot=True):
+def vectFit(ss, yy, p0=[], numIter=10, asymptote='none', makePlot=True):
     """Performs vector fitting of complex data and returns a scipy.signal.lti model.
     
     Parameters
@@ -77,12 +80,20 @@ def vectFit(ss, yy, p0, numIter=10, asymptote='none', makePlot=True):
     """
     thisGuess = p0
     for ii in range(numIter):
-        yyLti = vectFitSingle(ss, yy, thisGuess, asymptote='none')
+        _, _, sigma_res = getResidues(ss, yy, thisGuess, asymptote)
+        ones_col = np.transpose(np.matrix(np.ones(len(sigma_res))))
+        sigma_res_row = np.matrix(sigma_res)
+        Hmat = np.matrix(np.diag(thisGuess)) - ones_col*sigma_res_row
+        yy_poles, _ = np.linalg.eig(Hmat)
+        yy_res, asympArr, _ = getResidues(ss, yy, yy_poles, asymptote)
+        print(asympArr)
+        yy_num, yy_den = sig.invres(yy_res, yy_poles, asympArr)
+        yyLti = sig.lti(yy_num, yy_den)
         # The following loop flips poles as necessary to keep them
         # in the left-hand plane
-        for poleInd, pole in enumerate(yyLti.poles):
+        for poleIndex, pole in enumerate(yyLti.poles):
             if np.real(pole) > 0:
-                yyLti.poles[poleInd] = -np.conjugate(pole)
+                yyLti.poles[poleIndex] = -np.conjugate(pole)
         thisGuess = yyLti.poles
     if makePlot==True:
         figHandle = bodePlot(ss, yy, yyLti)
@@ -120,7 +131,7 @@ def bodePlot(ss, yy, theLti):
     axResMag.set_ylim(0.5*np.min(np.abs(resComplex)/np.abs(fitComplex)), 2*np.max(np.abs(resComplex)/np.abs(fitComplex)))
     axResMag.grid(linestyle='solid', which='major')
     axResMag.set_ylabel('Frac. res. amplitude')
-    resAngle = np.angle(fitComplex, deg=True) - np.angle(yy, deg=True)
+    resAngle = (np.unwrap(np.angle(fitComplex)) - np.unwrap(np.angle(yy))) * 180 / np.pi
     axResPha.semilogx(ff, resAngle,
                       alpha=0.7, lw=2, c=(0, 0.6, 0))
     axResPha.set_ylim(-1.1*np.max(np.abs(resAngle)),
